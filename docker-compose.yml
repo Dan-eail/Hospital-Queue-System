@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  database:
+    image: mysql:8.0
+    container_name: healthqueue-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: password123
+      MYSQL_DATABASE: hospital_queue_db
+      MYSQL_USER: healthqueue
+      MYSQL_PASSWORD: password123
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - healthqueue-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: healthqueue-api
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DB_HOST: database
+      DB_USER: healthqueue
+      DB_PASSWORD: ${DB_PASSWORD:-healthqueue123}
+      DB_NAME: hospital_queue_db
+      JWT_SECRET: ${JWT_SECRET:-your_jwt_secret_key_change_in_production}
+      AT_USERNAME: ${AT_USERNAME}
+      AT_API_KEY: ${AT_API_KEY}
+      CORS_ORIGIN: http://localhost:3000
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - healthqueue-network
+    volumes:
+      - ./backend/logs:/app/logs
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: healthqueue-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - healthqueue-network
+
+networks:
+  healthqueue-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+    driver: local
